@@ -50,7 +50,7 @@ function Threshold() {
 
   const doSync = async (deviceId, route) => {
     if (!route) {
-      setFetchError('No ESP route configured. Enter the route URL above.')
+      setFetchError('No controller route configured. Enter the route URL above.')
       return
     }
     setFetching(true)
@@ -58,9 +58,9 @@ function Threshold() {
     try {
       const res = await api.post(`/thresholds/sync?device_id=${deviceId}`)
       setThresholds(res.data)
-      addToast('Thresholds synced from ESP', 'success')
+      addToast('Thresholds synced from controller', 'success')
     } catch (err) {
-      const msg = err.response?.data?.detail || 'Sync failed — check the route URL and ESP connection'
+      const msg = err.response?.data?.detail || 'Sync failed — check the route URL and controller connection'
       setFetchError(msg)
       addToast(msg, 'error')
       const res = await api.get(`/thresholds?device_id=${deviceId}`)
@@ -103,12 +103,12 @@ function Threshold() {
     routeTimer.current = setTimeout(() => saveRoute(routeUrl, method), 800)
   }
 
-  const pushToEsp = async () => {
+  const pushToController = async () => {
     if (!selectedDevice) return
     setPushLoading(true)
     try {
       await api.post(`/thresholds/push?device_id=${selectedDevice.id}`)
-      addToast('Thresholds pushed to ESP', 'success')
+      addToast('Thresholds pushed to controller', 'success')
     } catch (err) {
       addToast(err.response?.data?.detail || 'Push failed', 'error')
     }
@@ -205,13 +205,13 @@ function Threshold() {
         <button className="btn btn-secondary" onClick={() => setSelectedDevice(null)}>&larr; Back</button>
         <h1>{selectedDevice.name}</h1>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '0.5rem' }}>
-          <button className="btn btn-sm btn-primary" onClick={pushToEsp} disabled={pushLoading}>
-            {pushLoading ? 'Pushing...' : 'Push to ESP'}
+          <button className="btn btn-sm btn-primary" onClick={pushToController} disabled={pushLoading}>
+            {pushLoading ? 'Pushing...' : 'Push to controller'}
           </button>
         </div>
       </div>
 
-      <div className="esp-sync-row" style={{ marginBottom: '0.75rem' }}>
+      <div className="sync-row" style={{ marginBottom: '0.75rem' }}>
         <input type="text" className="form-input" value={routeUrl}
           onChange={(e) => handleRouteChange(e.target.value)}
           placeholder="http://10.186.208.79/api/threshold/temperature" />
@@ -222,7 +222,7 @@ function Threshold() {
           <option value="PUT">PUT</option>
         </select>
         <button className="btn btn-sm btn-outline" onClick={() => doSync(selectedDevice.id, routeUrl)} disabled={fetching}>
-          {fetching ? 'Fetching...' : 'Fetch from ESP'}
+          {fetching ? 'Fetching...' : 'Fetch from controller'}
         </button>
       </div>
 
@@ -235,12 +235,12 @@ function Threshold() {
       <div className="threshold-list">
         {fetching && thresholds.length === 0 ? (
           <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>
-            <p className="page-subtitle" style={{ marginBottom: 0 }}>Fetching thresholds from ESP...</p>
+            <p className="page-subtitle" style={{ marginBottom: 0 }}>Fetching thresholds from controller...</p>
           </div>
         ) : thresholds.length === 0 ? (
           <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>
             <p className="page-subtitle" style={{ marginBottom: 0 }}>
-              No thresholds. Enter the ESP route URL above and click Fetch.
+              No thresholds. Enter the controller route URL above and click Fetch.
             </p>
           </div>
         ) : (
@@ -270,13 +270,13 @@ function Threshold() {
               <div className="form-row">
                 <div className="form-group" style={{ flex: 1 }}>
                   <label>Min</label>
-                  <input type="number" className="form-input" value={minVal} step="any"
-                    onChange={(e) => setMinVal(e.target.value)} />
+                  <input type="text" className="form-input" value={minVal} inputMode="decimal"
+                    onChange={(e) => setMinVal(e.target.value)} placeholder="empty = no limit" />
                 </div>
                 <div className="form-group" style={{ flex: 1 }}>
                   <label>Max</label>
-                  <input type="number" className="form-input" value={maxVal} step="any"
-                    onChange={(e) => setMaxVal(e.target.value)} />
+                  <input type="text" className="form-input" value={maxVal} inputMode="decimal"
+                    onChange={(e) => setMaxVal(e.target.value)} placeholder="empty = no limit" />
                 </div>
               </div>
               <div className="modal-actions" style={{ marginTop: '0.75rem' }}>

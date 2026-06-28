@@ -519,13 +519,13 @@ body {
   color: #2d3748;
 }
 
-.esp-sync-row {
+.sync-row {
   display: flex;
   align-items: center;
   gap: 0.5rem;
 }
 
-.esp-sync-row .form-input {
+.sync-row .form-input {
   flex: 1;
 }
 

@@ -9,7 +9,7 @@
 #include <DHT.h>
 #include <ESPmDNS.h>
 
-// ─── Pin Definitions ───
+// --- Pin assignments ---
 #define DHTPIN          4
 #define DHTTYPE         DHT11
 #define TOUCH_PIN       15
@@ -19,7 +19,7 @@
 #define OLED_RESET      -1
 #define FACTORY_RESET_PIN 0
 
-// ─── Defaults ───
+// --- Defaults for first boot ---
 #define DEFAULT_BROKER    "10.186.208.37"
 #define DEFAULT_PORT      1883
 #define DEFAULT_TOPIC     "fastiot/esp32"
@@ -27,11 +27,6 @@
 #define DEFAULT_SCREEN_TO 10000
 #define BASE_INTERVAL     5000
 
-// ─── Gas alarm thresholds ───
-#define GAS_ALARM_ON   3000
-#define GAS_ALARM_OFF  2000
-
-// ─── Globals ───
 Preferences prefs;
 DNSServer dns;
 WebServer server(80);
@@ -40,7 +35,6 @@ PubSubClient mqtt(wifiClient);
 Adafruit_SSD1306 display(128, 64, &Wire, OLED_RESET);
 DHT dht(DHTPIN, DHTTYPE);
 
-// ─── Config (loaded from Preferences) ───
 String wifiSsid        = "";
 String wifiPass        = "";
 String mqttBroker      = DEFAULT_BROKER;
@@ -50,7 +44,7 @@ float  intervalMult    = DEFAULT_MULTIPLIER;
 int    screenTimeout   = DEFAULT_SCREEN_TO;
 bool   configValid     = false;
 
-// ─── Runtime State ───
+// Timers and state tracking
 unsigned long lastPublish   = 0;
 unsigned long lastScreenOn  = 0;
 unsigned long lastTouch     = 0;
@@ -66,7 +60,7 @@ int   lightLevel    = 0;
 int   gasLevel      = 0;
 int   touchValue    = 4095;
 
-// ─── Config key constants ───
+// NVS key names — these survive reboots
 const char* NS           = "fastiot";
 const char* KEY_SSID     = "wifiSsid";
 const char* KEY_PASS     = "wifiPass";
@@ -77,7 +71,7 @@ const char* KEY_MULT     = "intervalMult";
 const char* KEY_SCR_TO   = "screenTo";
 const char* KEY_CONFIG   = "configValid";
 
-// ─── Threshold key constants ───
+// Threshold storage keys and defaults
 const char* KEY_THRESH_TEMP  = "thresh_temp";
 const char* KEY_THRESH_HUM   = "thresh_hum";
 const char* KEY_THRESH_LIGHT = "thresh_light";
@@ -92,7 +86,7 @@ const char* DEFAULT_THRESHOLDS[] = {
 };
 String threshData[4];
 
-// ─── Forward Declarations ───
+// --- Forward declarations ---
 void saveConfig();
 void loadConfig();
 void clearConfig();
@@ -125,7 +119,7 @@ void setup() {
   dht.begin();
   prefs.begin(NS, false);
 
-  // Factory reset if button 0 held at boot
+  // Hold GPIO 0 at boot to factory reset
   if (digitalRead(FACTORY_RESET_PIN) == LOW) {
     Serial.println("Factory reset triggered");
     clearConfig();
@@ -134,6 +128,7 @@ void setup() {
   loadConfig();
   loadThresholds();
 
+  // No saved config? Start the AP setup portal
   if (!configValid) {
     startConfigPortal();
     return;
@@ -160,7 +155,7 @@ void setup() {
 }
 
 // ═══════════════════════════════════════════════
-//  Loop
+//  Main loop
 // ═══════════════════════════════════════════════
 void loop() {
   if (configPortal) {
@@ -176,12 +171,14 @@ void loop() {
   unsigned long now = millis();
   handleTouch();
 
+  // Turn off the display after screenTimeout ms of inactivity
   if (screenTimeout >= 0 && screenOn && now - lastScreenOn > (unsigned long)screenTimeout) {
     display.clearDisplay();
     display.display();
     screenOn = false;
   }
 
+  // Read + publish sensors at BASE_INTERVAL * intervalMult
   unsigned long effectiveInterval = (unsigned long)(BASE_INTERVAL * intervalMult);
   if (now - lastPublish >= effectiveInterval) {
     lastPublish = now;
@@ -194,7 +191,7 @@ void loop() {
 }
 
 // ═══════════════════════════════════════════════
-//  Preferences (NVS) — Config Persistence
+//  Preferences (NVS) — survives reboots
 // ═══════════════════════════════════════════════
 void saveConfig() {
   prefs.putString(KEY_SSID,   wifiSsid);
@@ -218,6 +215,7 @@ void loadConfig() {
   configValid   = prefs.getBool(KEY_CONFIG,   false);
 }
 
+// Wipes NVS and reboots — called on factory reset
 void clearConfig() {
   prefs.clear();
   prefs.end();
@@ -226,7 +224,7 @@ void clearConfig() {
 }
 
 // ═══════════════════════════════════════════════
-//  Captive Portal — Configuration Mode
+//  Captive Portal — WiFi setup page
 // ═══════════════════════════════════════════════
 void startConfigPortal() {
   configPortal = true;
@@ -266,7 +264,7 @@ void startConfigPortal() {
     }
   });
 
-  // Captive portal catch-all — serve config page on any URL
+  // Intercept any URL the user tries to visit, serve the config page
   server.onNotFound([]() {
     server.send(200, "text/html", htmlPage());
   });
@@ -282,7 +280,7 @@ const char* htmlPage() {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>FastIOT — ESP32 Setup</title>
+<title>FastIOT — Setup</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
@@ -305,7 +303,7 @@ const char* htmlPage() {
 <body>
 <div class="card">
   <h1>FastIOT</h1>
-  <p class="sub">Configure your ESP32</p>
+  <p class="sub">Configure your device</p>
   <form method="POST" action="/">
     <h3>Wi-Fi</h3>
     <label>SSID</label>
@@ -338,10 +336,14 @@ const char* htmlPage() {
 }
 
 // ═══════════════════════════════════════════════
-//  HTTP Config Endpoints (for FastIOT Configuration page)
+//  HTTP — readBody tries multiple ways to get the request body
 // ═══════════════════════════════════════════════
 String readBody() {
+  if (server.hasArg("value")) return server.arg("value");
   String body = server.arg("plain");
+  if (body.length() == 0) {
+    if (server.hasArg("PLAIN")) body = server.arg("PLAIN");
+  }
   if (body.length() == 0) {
     for (int i = 0; i < server.args(); i++) {
       if (server.argName(i) == "value") {
@@ -350,15 +352,21 @@ String readBody() {
       }
     }
   }
+  if (body.length() == 0 && server.method() == HTTP_PUT) {
+    delay(10);
+    if (server.client().available()) {
+      body = server.client().readStringUntil('\n');
+      body.trim();
+    }
+  }
   return body;
 }
 
+// These endpoints let the backend read/change interval and screen timeout
 void startHttpServer() {
-  // GET interval_multiplier
   server.on("/api/config/interval_multiplier", HTTP_GET, []() {
     server.send(200, "text/plain", String(intervalMult));
   });
-  // PUT interval_multiplier
   server.on("/api/config/interval_multiplier", HTTP_PUT, []() {
     String val = readBody();
     if (val.length() > 0) {
@@ -390,12 +398,12 @@ void startHttpServer() {
     server.send(400, "text/plain", "invalid");
   });
 
-  // GET buzzer state
   server.on("/api/actuator/buzzer", HTTP_GET, []() {
     server.send(200, "text/plain", buzzerState ? "ON" : "OFF");
   });
 
-  // ─── Threshold routes (catch-all) ───
+  // Threshold endpoints use catch-all: /api/threshold/{sensor}
+  // GET returns JSON array, PUT receives compact string format
   server.onNotFound([]() {
     String uri = server.uri();
     if (uri.startsWith("/api/threshold/")) {
@@ -429,7 +437,7 @@ void startHttpServer() {
 }
 
 // ═══════════════════════════════════════════════
-//  WiFi + MQTT
+//  WiFi + MQTT connections
 // ═══════════════════════════════════════════════
 void connectWiFi() {
   Serial.print("Connecting to WiFi");
@@ -460,6 +468,7 @@ void connectWiFi() {
   Serial.print(":");
   Serial.println(mqttPort);
 
+  // Quick TCP check — make sure the broker actually accepts connections
   Serial.print("Testing TCP to broker... ");
   WiFiClient testClient;
   IPAddress brokerIP;
@@ -543,14 +552,14 @@ void connectMQTT() {
 }
 
 // ═══════════════════════════════════════════════
-//  MQTT Helpers
+//  MQTT — topic helpers
 // ═══════════════════════════════════════════════
 String sensorTopic(const char* name) {
   return mqttTopic + "/" + name;
 }
 
 // ═══════════════════════════════════════════════
-//  MQTT Callback
+//  MQTT — handles incoming commands
 // ═══════════════════════════════════════════════
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
   char msg[length + 1];
@@ -562,7 +571,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 
   Serial.printf("MQTT: %s -> %s\n", topic, value.c_str());
 
-  // ─── Actuator: Buzzer ───
+  // Toggle buzzer from dashboard — manual override lasts 30s
   if (t.equals(sensorTopic("buzzer"))) {
     buzzerState = (value == "ON" || value == "1");
     digitalWrite(BUZZER_PIN, buzzerState ? HIGH : LOW);
@@ -572,7 +581,6 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     return;
   }
 
-  // ─── Config: Interval Multiplier ───
   if (t.equals(sensorTopic("config/interval_multiplier"))) {
     float m = value.toFloat();
     if (m > 0) {
@@ -584,7 +592,6 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     return;
   }
 
-  // ─── Config: Screen Timeout ───
   if (t.equals(sensorTopic("config/screen_timeout"))) {
     int to = value.toInt();
     screenTimeout = to;
@@ -595,7 +602,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
     return;
   }
 
-  // ─── Config: Factory Reset ───
+  // Sending "1" or "ON" to config/reset wipes NVS and reboots
   if (t.equals(sensorTopic("config/reset"))) {
     if (value == "1" || value == "ON") {
       mqtt.publish(sensorTopic("status").c_str(), "resetting", true);
@@ -607,7 +614,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 }
 
 // ═══════════════════════════════════════════════
-//  Sensors
+//  Sensors — read and publish
 // ═══════════════════════════════════════════════
 void readSensors() {
   temperature = dht.readTemperature();
@@ -622,6 +629,7 @@ void readSensors() {
                 temperature, humidity, lightLevel, gasLevel, touchValue);
 }
 
+// Publishes each sensor value as a retained MQTT message
 void publishSensors() {
   if (!isnan(temperature))
     mqtt.publish(sensorTopic("temperature").c_str(), String(temperature).c_str(), true);
@@ -640,6 +648,7 @@ void publishSensors() {
 void handleTouch() {
   touchValue = touchRead(TOUCH_PIN);
   unsigned long now = millis();
+  // Debounce: ignore touches within 1s of the last one
   if (touchValue < 1000 && now - lastTouch > 1000) {
     lastTouch = now;
     wakeScreen();
@@ -654,6 +663,7 @@ void wakeScreen() {
   }
 }
 
+// Parses compact format "label,min,max;..." and returns the first matching label
 String getThresholdLabel(int idx, float val) {
   String raw = threshData[idx];
   if (raw.length() == 0) return "";
@@ -676,6 +686,17 @@ String getThresholdLabel(int idx, float val) {
   return "";
 }
 
+// Returns the label of the last threshold entry — used as the "danger" level
+String getLastThresholdLabel(int idx) {
+  String raw = threshData[idx];
+  if (raw.length() == 0) return "";
+  int lastSemi = raw.lastIndexOf(';');
+  String lastEntry = (lastSemi < 0) ? raw : raw.substring(lastSemi + 1);
+  int c1 = lastEntry.indexOf(',');
+  return (c1 > 0) ? lastEntry.substring(0, c1) : "";
+}
+
+// Shows threshold labels on the OLED when available, raw values otherwise
 void updateDisplay() {
   display.clearDisplay();
   display.setCursor(0, 0);
@@ -697,7 +718,7 @@ void updateDisplay() {
 }
 
 // ═══════════════════════════════════════════════
-//  Buzzer — Gas alarm with hysteresis
+//  Buzzer — fires when gas matches its last (danger) threshold
 // ═══════════════════════════════════════════════
 void checkBuzzer() {
   if (buzzerManualOverride) {
@@ -707,11 +728,14 @@ void checkBuzzer() {
       return;
     }
   }
-  if (gasLevel > GAS_ALARM_ON && !buzzerState) {
+  String label = getThresholdLabel(3, gasLevel);
+  String danger = getLastThresholdLabel(3);
+  bool alarm = (label.length() > 0 && label == danger);
+  if (alarm && !buzzerState) {
     buzzerState = true;
     digitalWrite(BUZZER_PIN, HIGH);
     mqtt.publish(sensorTopic("buzzer").c_str(), "ON", true);
-  } else if (gasLevel < GAS_ALARM_OFF && buzzerState) {
+  } else if (!alarm && buzzerState) {
     buzzerState = false;
     digitalWrite(BUZZER_PIN, LOW);
     mqtt.publish(sensorTopic("buzzer").c_str(), "OFF", true);
@@ -719,12 +743,13 @@ void checkBuzzer() {
 }
 
 // ═══════════════════════════════════════════════
-//  Threshold — NVS persistence and HTTP API
+//  Threshold — loaded from NVS, updated via HTTP
 // ═══════════════════════════════════════════════
 void loadThresholds() {
   const char* keys[] = {KEY_THRESH_TEMP, KEY_THRESH_HUM, KEY_THRESH_LIGHT, KEY_THRESH_GAS};
   for (int i = 0; i < THRESH_SENSOR_COUNT; i++) {
     threshData[i] = prefs.getString(keys[i], "");
+    // First boot — write defaults to NVS
     if (threshData[i].length() == 0) {
       threshData[i] = DEFAULT_THRESHOLDS[i];
       prefs.putString(keys[i], threshData[i]);
@@ -741,6 +766,7 @@ String getThresholdData(const String& sensor) {
   return "";
 }
 
+// Saves a compact string received via HTTP PUT to NVS and memory
 void saveThresholdData(const String& sensor, const String& data) {
   const char* keys[] = {KEY_THRESH_TEMP, KEY_THRESH_HUM, KEY_THRESH_LIGHT, KEY_THRESH_GAS};
   for (int i = 0; i < THRESH_SENSOR_COUNT; i++) {

@@ -351,7 +351,7 @@ function Devices({ user }) {
               </div>
               <div className="form-group">
                 <label>MQTT Topic</label>
-                <input type="text" value={newController.mqtt_topic} onChange={(e) => setNewController({ ...newController, mqtt_topic: e.target.value })} required placeholder="e.g. fastiot/esp32" />
+                <input type="text" value={newController.mqtt_topic} onChange={(e) => setNewController({ ...newController, mqtt_topic: e.target.value })} required placeholder="e.g. fastiot/my-device" />
               </div>
               <div className="form-group">
                 <label>Description (optional)</label>

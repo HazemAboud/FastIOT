@@ -614,12 +614,13 @@ async def update_threshold(
     controller = await db.get(Controller, device.controller_id)
     if not controller or controller.user_id != user.id:
         raise HTTPException(status_code=404, detail="Threshold not found")
-    if payload.label is not None:
-        threshold.label = payload.label
-    if payload.min_threshold is not None:
-        threshold.min_threshold = payload.min_threshold
-    if payload.max_threshold is not None:
-        threshold.max_threshold = payload.max_threshold
+    update_data = payload.model_dump(exclude_unset=True)
+    if "label" in update_data:
+        threshold.label = update_data["label"]
+    if "min_threshold" in update_data:
+        threshold.min_threshold = update_data["min_threshold"]
+    if "max_threshold" in update_data:
+        threshold.max_threshold = update_data["max_threshold"]
     await db.commit()
     await db.refresh(threshold)
     return ThresholdResponse.model_validate(threshold)
@@ -703,9 +704,9 @@ async def push_thresholds(
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             if device.threshold_method == "PUT":
-                await client.put(device.threshold_update_route, content=compact)
+                await client.put(device.threshold_update_route, data={"value": compact})
             elif device.threshold_method == "POST":
-                await client.post(device.threshold_update_route, content=compact)
+                await client.post(device.threshold_update_route, data={"value": compact})
             else:
                 await client.get(device.threshold_update_route, params={"value": compact})
     except Exception as e:
@@ -814,7 +815,11 @@ async def ai_insight(
                 "name": d.name,
                 "device_type": d.device_type,
                 "unit": d.unit,
-                "readings": [r.value if r.value is not None else r.value_str for r in readings],
+                "readings": [
+                    f"{r.value} ({r.value_str})" if r.value is not None and r.value_str
+                    else (r.value if r.value is not None else (r.value_str or "No data"))
+                    for r in readings
+                ],
             })
     else:
         context = payload.device_context
