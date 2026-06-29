@@ -10,9 +10,9 @@ FastIOT is a full-stack IoT monitoring platform with real-time sensor visualizat
 
 ```
 ┌──────────────┐     MQTT      ┌──────────────┐     HTTP/WS     ┌──────────────┐
-│   Devices    │ ──────────▶   │   Backend    │ ◀─────────────  │   Frontend   │
+│   Devices    │ ◀──────────▶ │   Backend    │ ◀─────────────  │   Frontend   │
 │  (ESP32,etc) │               │  FastAPI/Py  │                 │  React SPA   │
-│              │ ◀── HTTP ───  │  + MySQL DB  │                 │              │
+│              │ ◀── HTTP ───▶│  + MySQL DB  │                 │              │
 └──────────────┘               └──────────────┘                 └──────────────┘
 ```
 
