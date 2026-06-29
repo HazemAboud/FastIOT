@@ -442,7 +442,11 @@ void startHttpServer() {
 void connectWiFi() {
   Serial.print("Connecting to WiFi");
   WiFi.mode(WIFI_STA);
-  WiFi.begin(wifiSsid.c_str(), wifiPass.c_str());
+  if (wifiPass.length() > 0) {
+    WiFi.begin(wifiSsid.c_str(), wifiPass.c_str());
+  } else {
+    WiFi.begin(wifiSsid.c_str());
+  }
   int attempts = 0;
   while (WiFi.status() != WL_CONNECTED && attempts < 40) {
     delay(500);

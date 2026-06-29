@@ -2,7 +2,9 @@
 
 **Presentation:** https://youtu.be/Ew-vjJqzfY8
 
-FastIOT is a full-stack IoT monitoring platform with a Python/FastAPI backend, a React dashboard, and MQTT-based device communication. It provides real-time sensor visualization, threshold-based labeling, actuator control, config management, AI-powered insights, and health monitoring — all through a web interface.
+FastIOT is a full-stack IoT monitoring platform with real-time sensor visualization, threshold-based labeling, actuator control, configuration management, AI-powered analysis, and device health monitoring — all from a web dashboard. Sensor nodes publish telemetry over MQTT to an embedded broker; the backend stores readings in MySQL, streams them to the dashboard via WebSocket, and exposes REST endpoints for management, threshold sync, and config control.
+
+---
 
 ## Architecture
 
@@ -14,54 +16,87 @@ FastIOT is a full-stack IoT monitoring platform with a Python/FastAPI backend, a
 └──────────────┘               └──────────────┘                 └──────────────┘
 ```
 
-### Backend (Python/FastAPI, port 8000)
-- **REST API** — CRUD for controllers, devices, thresholds, configs, users, sessions
-- **MQTT service** — subscribes to device topics, stores readings in MySQL, broadcasts via WebSocket
-- **Embedded MQTT broker** — runs inside the Python process (amqtt), no external broker needed
-- **AI insights** — sends recent readings to a local Ollama model for status assessment and recommendations
-- **Threshold sync/push** — fetches threshold definitions from devices via HTTP, pushes modifications back
-- **Health monitoring** — tracks last-seen timestamps per device (healthy/warning/critical)
+Devices push readings and receive commands over MQTT. An embedded broker (amqtt) runs inside the backend. The backend stores everything in MySQL and pushes live updates to the dashboard over WebSocket. A separate HTTP channel lets the dashboard read and write device config and thresholds directly.
 
-### Frontend (React/Vite, port 5173)
-- **Dashboard** — real-time sensor cards with value/label toggle, live charts, historical data, health status
-- **Devices page** — register/manage controllers and sensor/actuator devices
-- **Threshold page** — edit threshold ranges, sync from device, push modifications to device
-- **Configuration page** — dynamic controls (toggle switches, sliders, text inputs) for device settings
-- **AI Insights tab** — ask questions about sensor data, get JSON-structured analysis
-- **User management** — registration, login, password change, account deletion
+---
 
-### Database (MySQL)
-Tables: `users`, `sessions`, `controllers`, `devices`, `device_data`, `configs`, `thresholds`
+## Features
 
-## Example: ESP32 Sensor Node
+### Real-Time Monitoring
+Pick a controller and watch its sensor values stream in over WebSocket. Each sensor shows as a card with value, unit, type badge, and timestamp. Toggle between the raw number and the threshold label (e.g. "Comfortable"). A live chart per sensor tracks the last 80 readings. Start and stop the subscription as needed.
 
-The ESP firmware (`esp/FastIOT/`) is a complete reference implementation that demonstrates how a microcontroller connects to FastIOT.
+### Historical Data
+Load past readings per sensor. The dashboard shows averages, standard deviation, and sample count, and a  line chart.
 
-### Hardware
-- **ESP32** — WiFi + MQTT communication
-- **DHT11** — temperature & humidity (GPIO 4)
-- **MQ-2** — gas/smoke sensor (GPIO 32)
-- **LDR** — light level (GPIO 34, ADC)
-- **Touch sensor** — capacitive touch (GPIO 15)
-- **SSD1306 OLED** — 128x64 display (I2C, address 0x3C)
-- **Buzzer** — alert output (GPIO 18)
+### Actuator Control
+All actuator-type devices for a controller are listed here. Flip switch actuators ON/OFF over MQTT. Continuous actuators get a numeric input with a Send button. The retained MQTT value is read when you open the tab.
 
-### Setup Flow
-1. On first boot, the ESP32 starts a captive portal AP (`FastIOT-Setup`)
-2. User connects to the AP and submits WiFi credentials + MQTT broker IP
-3. Device connects to WiFi, joins MQTT, and begins publishing sensor data
-4. Data flows: `fastiot/{topic}/temperature`, `humidity`, `light`, `gas`, `touch`
-5. The backend stores readings and forwards them to the dashboard in real time
+### Health Monitoring
+Devices are color-coded by last-seen time: green under 5 minutes, yellow under 30, red beyond 30, gray if never seen. The table shows each device's status, last value, and last reading time. Auto-refreshes every 10 seconds.
 
-### Threshold System
-Thresholds are stored as compact strings in NVS: `"Safe,0,3000;Warning,3000,5000;Dangerous,5000,"`
-- The dashboard can **fetch** thresholds from the device (HTTP GET → JSON)
-- The dashboard can **push** modified thresholds back (HTTP PUT → compact string)
-- The OLED displays threshold labels (e.g. "Comfortable") instead of raw values when available
-- The gas buzzer auto-activates when readings fall into the highest threshold range
+### AI Insights
+The last 30 readings go to a local Ollama model. It returns a status classification (Normal, Caution, Danger, Critical) with 2–5 recommendations. You can also ask a free-form question about the data.
 
-### Config Management
-Config values like `interval_multiplier` and `screen_timeout` can be changed dynamically via MQTT or HTTP — no firmware re-flash needed.
+### Controllers and Devices
+Register hardware nodes with a name, MQTT topic prefix, description, and optional image. Each controller holds multiple devices — sensors and actuators — each with a name, type, and unit. Everything can be created, edited, or deleted; deleting a controller removes its devices and data too.
+
+### Configuration
+Dynamic config entries live on each controller and are read/written over HTTP. The UI picks the right control based on `possible_values`:
+- Empty or `["field"]` → text input
+- Two values → toggle switch
+- Three or more → labeled slider
+
+Changes forward to the device automatically. Entries can be added with a name, read/update routes, HTTP method, and allowed values. Refresh individual entries or pull them all from the device.
+
+### Thresholds
+Thresholds are named ranges for sensor values, stored on the device as compact strings (`"label,min,max;..."`). The dashboard fetches them via HTTP GET, lets you edit the ranges, and pushes the result back via HTTP PUT. No re-flashing needed.
+
+### User Management
+Accounts use email and password with UUID sessions that expire after 7 days. Users can change their password or delete their account.
+
+---
+
+## Database (MySQL)
+
+| Table | Purpose |
+|---|---|
+| `users` | Account credentials and registration metadata |
+| `sessions` | UUID-based auth tokens with 7-day expiry |
+| `controllers` | Registered hardware nodes with MQTT topic prefix |
+| `devices` | Sensors and actuators under a controller |
+| `device_data` | Time-series readings (float, string, timestamp) |
+| `configs` | Dynamic config entries with possible values and HTTP routes |
+| `thresholds` | Named ranges per device (label, min, max) |
+
+---
+
+## Hardware: ESP32 Sensor Node
+
+The firmware at `esp/FastIOT/` is a complete reference implementation showing how a microcontroller connects to FastIOT.
+
+### Components
+
+- **ESP32** — WiFi-enabled microcontroller (Arduino framework)
+- **DHT11** — temperature and humidity
+- **MQ-2** — gas/smoke detection
+- **LDR** — ambient light via ADC
+- **Capacitive touch** — touch input
+- **SSD1306 OLED** — on-device display
+- **Buzzer** — alert output
+
+### Initialization
+
+On first boot (or factory reset), the ESP32 starts a captive portal AP called `FastIOT-Setup`. Connect to it, submit WiFi credentials and the MQTT broker IP, and the device saves everything to NVS and reboots.
+
+### Normal Operation
+
+Once connected, the ESP32 reads all sensors on a configurable interval and publishes retained JSON messages to `{topic}/{sensor_name}`. It subscribes to actuator and config topics for remote commands. An HTTP server lets the dashboard read and write thresholds and config settings directly. The OLED shows sensor values (or threshold labels like "Comfortable" when ranges are configured). The buzzer fires automatically when gas readings hit the highest threshold manual MQTT override lasts 30 seconds. The display sleeps after inactivity and wakes on touch.
+
+### Thresholds and Config
+
+Thresholds live in NVS as `"label,min,max;..."` strings. The dashboard fetches them over HTTP, lets you edit them, and pushes the result back. Same mechanism covers config values like reading interval and screen timeout. All without re-flashing.
+
+---
 
 ## Running
 
@@ -77,4 +112,4 @@ npm install
 npm run dev
 ```
 
-Configure `.env` with MySQL connection, MQTT host/port, and optional Ollama endpoint.
+Configure `.env` with MySQL connection, MQTT host/port, and an optional Ollama endpoint for AI insights.

@@ -118,6 +118,15 @@ class MQTTService:
             pass
         try:
             data = json.loads(payload)
+            str_value = data.get("value_str")
+            if str_value is not None:
+                num_value = data.get("value")
+                if num_value is not None:
+                    try:
+                        return float(num_value), str(str_value)
+                    except (ValueError, TypeError):
+                        pass
+                return None, str(str_value)
             if "value" in data:
                 v = data["value"]
                 try:
